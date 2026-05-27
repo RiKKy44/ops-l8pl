@@ -50,6 +50,12 @@ typedef struct server_data {
     pthread_mutex_t* fifo_mutex;
 
     pthread_cond_t* fifo_cond;
+
+    struct sockaddr_in player_addrs[MAX_CLIENTS];
+
+    pthread_mutex_t* addr_mutex;
+
+    int* addr_count;
 }server_data_t;
 
 void usage(char* name)
@@ -60,12 +66,13 @@ void usage(char* name)
 }
 
 
-
 void doServer(int fd, server_data_t* data) {
     struct sockaddr_in addr;
 
     message_t* message;
     char buf[MAX_NAME_LENGTH +2];
+
+    int is_started = 0;
 
     int msg_count = 0;
 
@@ -89,6 +96,22 @@ void doServer(int fd, server_data_t* data) {
 
         switch (message->type) {
             case 'l':
+                pthread_mutex_lock(data->addr_mutex);
+                if (is_started) {
+                    pthread_mutex_unlock(data->addr_mutex);
+                    continue;
+                }
+                if (memcmp(&data->player_addrs[0], &addr, sizeof(addr))==0 || memcmp(&data->player_addrs[1], &addr, sizeof(addr))==0 ) {
+                    pthread_mutex_unlock(data->addr_mutex);
+                    continue;
+                }
+                data->player_addrs[*data->addr_count] = addr;
+                (*data->addr_count)++;
+
+                if (*data->addr_count >= MAX_CLIENTS) {
+                    is_started = 1;
+                }
+                pthread_mutex_unlock(data->addr_mutex);
                 printf("Welcome, %s\n", message->message);
                 break;
             case 'c':
@@ -173,7 +196,6 @@ void* thread_work(void* arg) {
 
         printf("Someone casts %s onto %d,%d\n", spell_names[spell_id], x,y);
     }
-
     return NULL;
 }
 
@@ -236,6 +258,4 @@ int main(int argc, char** argv)
     close(fd);
 
     return EXIT_SUCCESS;
-
-
 }
